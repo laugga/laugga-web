@@ -1,0 +1,61 @@
+# The merge gate CONVENTIONS.md → "Every typed repository: tests gate the
+# merge" asks for, in laugga/ops. Web is on the "anything else typed" row:
+# GitHub Actions, ubuntu-latest, running the Makefile's own build, test and
+# lint.
+#
+# `Build and test` is the check the repository's Require CI ruleset names.
+# Renaming the job renames the check, and a required check that never reports
+# blocks every merge. It is the only job here for the same reason: every job
+# in this file shows up on a pull request as a check of its own.
+name: CI
+
+on:
+  pull_request:
+    # The integration and release lanes. A branch a repository does not have
+    # is a line that matches nothing.
+    branches: [main, dev]
+  # CONVENTIONS.md asks for the gate on a new tag as well. Tags only, so a
+  # push to a branch still starts nothing here.
+  push:
+    tags: ["*"]
+
+# A new push supersedes the run in flight; nobody reads the superseded result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Printed before the build so a first failure says which toolchain the
+      # runner had, rather than only that the build exited 1.
+      - name: Environment
+        run: |
+          node --version
+          npm --version
+
+      # dist/index.html is a real Make target rather than a phony one, so
+      # `make test` finds the build `make build` just made and does not repeat
+      # it.
+      - name: make build
+        run: make build
+
+      - name: make test
+        run: make test
+
+      - name: make lint
+        run: make lint

@@ -1,0 +1,46 @@
+---
+// The typefaces, in the order the previous site loaded them: Montserrat for
+// headings, Merriweather for the body. Both are self-hosted from npm, so no
+// page asks a font service for anything.
+import "@fontsource-variable/montserrat"
+import "@fontsource/merriweather"
+import "../styles/normalize.css"
+import "../styles/global.css"
+import Header from "../components/Header.astro"
+import Footer from "../components/Footer.astro"
+import { seo } from "../data/seo"
+
+interface Props {
+  title?: string
+  description?: string
+}
+
+const { title = seo.title, description = seo.description } = Astro.props
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="theme-color" content="#000000" />
+    <link rel="icon" href="/laugga-icon.png" type="image/png" />
+
+    <title>{seo.siteName} – {title}</title>
+    <meta name="description" content={description} />
+    <meta name="keywords" content={seo.keywords} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+  </head>
+  <body>
+    <Header />
+    <main>
+      <slot />
+    </main>
+    <Footer />
+  </body>
+</html>

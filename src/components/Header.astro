@@ -1,0 +1,30 @@
+---
+// The logo, linking home. Astro inlines the SVG, as the previous site did, so
+// it is drawn with the page rather than fetched after it.
+import Logo from "../assets/laugga-practice.svg"
+---
+
+<header>
+  <a href="/" aria-label="laugga practice">
+    <Logo aria-hidden="true" />
+  </a>
+</header>
+
+<style>
+  /* The 2rem above the logo was the bottom margin of a stray <p>header</p>
+     on the previous site, invisible at font-size 0. The space stays; the text
+     goes. */
+  header {
+    margin: 0 auto;
+    padding: var(--spacing-8) 0 0 0;
+    text-align: center;
+    color: #000;
+    width: 100%;
+    overflow: hidden;
+    font-size: 0;
+  }
+
+  header :global(svg) {
+    height: 80px;
+  }
+</style>

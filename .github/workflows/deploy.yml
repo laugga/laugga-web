@@ -1,0 +1,100 @@
+# The integration lane of CONVENTIONS.md → Versioning, in laugga/ops: what is
+# merged into dev is published to the Hosting site of the Development project
+# of this repository's Domain. Production is never deployed from here.
+#
+# A workflow of its own, and not a job in ci.yml, so that it never runs on a
+# pull request: there it would report as a skipped check, and the Require CI
+# ruleset is derived from the checks pull requests report.
+#
+# It stores no credential. It signs in with Workload Identity Federation: the
+# run's own GitHub OIDC token is exchanged in the Development project for a
+# short-lived credential as the service account github-deploy, which may
+# deploy Hosting there and nothing else. The provider accepts a token only
+# from a run on dev, so the sign-in cannot be tried from a pull request or from
+# another branch, and one it refuses is fixed on Google's side, not here.
+# `make deploy-development`, from dev, is the same step by hand.
+name: Deploy
+
+on:
+  push:
+    branches: [dev]
+
+# One deploy at a time. A push that arrives during one waits for it instead of
+# cancelling it half-way.
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  # To ask GitHub for the run's OIDC token, which is what the sign-in presents.
+  id-token: write
+
+env:
+  # The two lines of this file a repository sets, and the only two: nothing
+  # else in it names the site. Both are the Development project's — its number
+  # in the first, its ID in the second — and neither is a secret.
+  # host/firebase-app.sh apply, in laugga/ops, writes them. AGENTS.md →
+  # Deployment says what they are, and what has to exist on Google's side.
+  WORKLOAD_IDENTITY_PROVIDER: projects/656901280286/locations/global/workloadIdentityPools/github/providers/github
+  SERVICE_ACCOUNT: github-deploy@laugga-development.iam.gserviceaccount.com
+
+jobs:
+  deploy:
+    name: Deploy dev to the Development project
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # A repository made from the template can merge into dev before it has
+      # been given its project. Then there is nothing to sign in to: the run
+      # says so in a warning and passes, and every step below is skipped.
+      - name: Is the sign-in set?
+        id: sign-in
+        run: |
+          case "$WORKLOAD_IDENTITY_PROVIDER $SERVICE_ACCOUNT" in
+            *REPLACE-ME*)
+              echo "::warning title=dev was not deployed::WORKLOAD_IDENTITY_PROVIDER and SERVICE_ACCOUNT, in .github/workflows/deploy.yml, are still the template's placeholders, so this run has no project to sign in to. AGENTS.md → Deployment says what they are."
+              ;;
+            *)
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - uses: actions/checkout@v7
+        if: steps.sign-in.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v7
+        if: steps.sign-in.outputs.ready == 'true'
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # This repository has no firebase-tools of its own: `make deploy` uses
+      # the host's. So the runner installs one, pinned, and the CLI that
+      # deploys changes only when this line does. Printing the version proves
+      # it runs on the runner's Node before anything is signed in.
+      - name: Install firebase-tools
+        if: steps.sign-in.outputs.ready == 'true'
+        run: |
+          npm install --global firebase-tools@15.32.1
+          firebase --version
+
+      - name: make build
+        if: steps.sign-in.outputs.ready == 'true'
+        run: make build
+
+      # After checkout, because the credentials file it writes goes into the
+      # workspace, which checkout empties. After the install and the build, so
+      # that the deploy is the only step that runs with a credential. It
+      # exports GOOGLE_APPLICATION_CREDENTIALS, which firebase reads.
+      - uses: google-github-actions/auth@v3
+        if: steps.sign-in.outputs.ready == 'true'
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.SERVICE_ACCOUNT }}
+
+      # `development` is the name .firebaserc gives the Development project.
+      - name: Deploy to Hosting
+        if: steps.sign-in.outputs.ready == 'true'
+        run: firebase deploy --only hosting --project development --non-interactive
