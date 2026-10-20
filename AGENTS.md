@@ -99,9 +99,9 @@ date: 2023-04-26T20:35:01.398Z
 | `video_url` | Optional. A Vimeo player URL; when it is set, the home page shows the video in place of the image |
 | `date` | Its place on the home page: newest first |
 
-`src/content.config.ts` is the schema. A missing field, a `video_url` that is
-not a URL, or an `image` that is not in the folder fails `make build` and
-`make lint`, not the page. Images go through `astro:assets`: the home page
+`src/content.config.ts` is the schema. A missing field or a `video_url` that
+is not a URL fails `make lint` and `make build`; an `image` that is not in the
+folder fails `make build`. Neither gets as far as a page. Images go through `astro:assets`: the home page
 serves each at 250px wide, as WebP with a PNG fallback, at 63, 125 and 250
 pixels.
 
