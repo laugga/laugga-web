@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "laugga-45434"
+    "default": "laugga-development",
+    "development": "laugga-development",
+    "production": "laugga-45434"
   }
 }
