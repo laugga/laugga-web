@@ -1,0 +1,39 @@
+---
+// An exercise's Vimeo player, in place of its image.
+interface Props {
+  src: string
+  title: string
+}
+
+const { src, title } = Astro.props
+
+// The player parameters laug.ga has always asked for: muted, looping and
+// playing on its own, pausing when another player starts, and with Vimeo's
+// controls (background=0). The previous site appended them with a second
+// `?`, which made them part of the `h` hash already in every URL; they are set
+// as parameters of their own here.
+const PLAYER = {
+  muted: "1",
+  loop: "1",
+  autoplay: "1",
+  autopause: "1",
+  background: "0",
+}
+
+const url = new URL(src)
+for (const [key, value] of Object.entries(PLAYER)) url.searchParams.set(key, value)
+---
+
+<div class="video">
+  <iframe
+    src={url.href}
+    title={title}
+    allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+    allowfullscreen></iframe>
+</div>
+
+<style>
+  iframe {
+    border: 0;
+  }
+</style>

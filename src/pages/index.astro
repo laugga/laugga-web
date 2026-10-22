@@ -1,0 +1,32 @@
+---
+import { getCollection } from "astro:content"
+import { Picture } from "astro:assets"
+import Layout from "../layouts/Layout.astro"
+import Video from "../components/Video.astro"
+
+// Newest first, as laug.ga has always listed them.
+const exercises = (await getCollection("exercise")).sort(
+  (a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+)
+---
+
+<Layout>
+  <div class="container">
+    {exercises.map(({ data }) => (
+      <div class="item">
+        {data.video_url ? (
+          <Video src={data.video_url} title={data.title} />
+        ) : (
+          <Picture
+            src={data.image}
+            alt={data.alt}
+            width={250}
+            widths={[63, 125, 250]}
+            sizes="(min-width: 250px) 250px, 100vw"
+            formats={["webp"]}
+          />
+        )}
+      </div>
+    ))}
+  </div>
+</Layout>
