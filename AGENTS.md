@@ -121,8 +121,9 @@ reports, and the one the repository's *Require CI* ruleset requires. It is the
 only job in the file on purpose: every job that runs on a pull request reports
 there as a check of its own.
 
-`.github/workflows/deploy.yml` is the other workflow, and it is not a gate: it
-publishes `dev` after a merge, and never runs on a pull request (*Deployment*,
+The other two workflows are not gates, and neither runs on a pull request:
+`.github/workflows/deploy.yml` publishes `dev` after a merge, and
+`.github/workflows/deploy-production.yml` publishes a final tag (*Deployment*,
 below).
 
 ## Layout
@@ -143,7 +144,7 @@ below).
 | `scripts/version/` | `version.sh`, vendored from `laugga/ops` (*Versioning*) |
 | `firebase.json` | What Firebase Hosting publishes, `dist/`, and how it caches it |
 | `.firebaserc` | The Firebase projects, by name: `default`, `development`, `production` |
-| `.github/workflows/` | `ci.yml`, the merge gate, and `deploy.yml`, the deploy of `dev` |
+| `.github/workflows/` | `ci.yml`, the merge gate, `deploy.yml`, the deploy of `dev`, and `deploy-production.yml`, the deploy of a final tag |
 | `Makefile` | The uniform interface: `build`, `test`, `lint`, `clean`, `deploy`, `deploy-development` |
 
 Lowercase directories throughout: they are Astro's own names, and its
@@ -158,11 +159,13 @@ everything else.
 
 ## Deployment
 
-Two deploys, and both go to Firebase Hosting in **`laugga-development`**
+Three deploys. Two go to Firebase Hosting in **`laugga-development`**
 (project number `656901280286`), the Laugga Domain's Development project
-(`CONVENTIONS.md` → *Firebase projects*). A pull request gets a preview from
+(`CONVENTIONS.md` → *Firebase projects*): a pull request gets a preview from
 the agent, and a merge into `dev` is published by a workflow. Neither is
-production.
+production. The third is: a final tag `X.Y.Z`, cut with `/cut-release`, is
+deployed to **`laugga-45434`**, which serves laug.ga, by a workflow of its own
+(*Production*, below).
 
 | | `make deploy` | `make deploy-development` |
 |---|---|---|
@@ -185,18 +188,19 @@ exists on GitHub. **Push before deploying.**
 |---|---|
 | Destination configuration | `FIREBASE_PROJECT` in the root `Makefile`, and `hosting` in `firebase.json`. Neither names a Hosting site — this is the Laugga Domain's own website — so a deploy goes to the default site of the project it is given. Nothing in the site loads the Firebase SDK, so there is no web config to commit |
 | Host setup | `npm i -g firebase-tools` and `firebase login`, once, as an account that can deploy Hosting in `laugga-development` |
-| The workflow's CLI | `firebase-tools` at the version `deploy.yml` pins, installed on the runner by the run itself, because this repository has no copy of its own |
+| The workflow's CLI | `firebase-tools` at the version `deploy.yml` pins, and `deploy-production.yml` pins the same, installed on the runner by the run itself, because this repository has no copy of its own |
 | How the workflow signs in | Workload Identity Federation, as the service account `github-deploy` of `laugga-development`. No secret, and no key |
 
 `.firebaserc` names the projects. `default` and `development` are
 `laugga-development`, so a `firebase` command given no `--project` never
 reaches production, and `deploy.yml` deploys to `development` by that name.
 `production` is **`laugga-45434`**, which serves laug.ga — a named exception
-to the Domain's project naming (OPS-72).
+to the Domain's project naming (OPS-72) — and `deploy-production.yml` deploys
+to it by that name.
 
-**Production is a separate act:** `firebase deploy --only hosting --project
-production`, from `main`, by a person. Neither target does it, no workflow
-does, and no agent should.
+**Production is deployed by a final tag, and by nothing else.** Neither
+target deploys it, `deploy.yml` never does, no merge does — into `dev` or into
+`main` — and no agent should (*Production*, below).
 
 ### How the deploy workflow signs in
 
@@ -244,6 +248,55 @@ gcloud iam service-accounts add-iam-policy-binding github-deploy@laugga-developm
 ends. Unless it reads the provider and the binding to exist, it prints the
 commands that make them. Until they do, a merge into `dev` is not deployed.
 
+### Production
+
+**A final tag `X.Y.Z` deploys production** (`CONVENTIONS.md` → *One
+deployment contract*). `.github/workflows/deploy-production.yml` runs on a
+pushed tag matching `[0-9]+.[0-9]+.[0-9]+` and on nothing else: no branch, no
+beta or rc tag, no pull request, and no `workflow_dispatch`. It refuses a tag
+whose commit is on neither `dev` nor a `release/X.Y.Z` branch, then runs `make
+build` and `make test` on the tagged commit, and `firebase deploy --only
+hosting --project production`.
+
+**The tag is cut with `/cut-release`**, in `laugga/ops`, by an organisation
+owner at their own machine: only an owner can push a tag, by the
+organisation's *Protect tags* ruleset. A website's final goes on the tip of
+`dev`, or of a `release/X.Y.Z` line, and a website has no beta or rc. Right
+after it, `/cut-release` opens the pull request from `release/X.Y.Z` into
+`main`, which a person merges with a merge commit and which publishes nothing.
+No agent cuts a tag.
+
+It is `share/workflows/website-production.yml` in `laugga/ops`, copied, and
+the only lines that differ are its two sign-in lines, both the production
+project's. Everything else in it is `ops`'s, so a change to the rest is made
+there first.
+
+| Line | Value |
+|---|---|
+| `WORKLOAD_IDENTITY_PROVIDER` | `projects/1095622935123/locations/global/workloadIdentityPools/github/providers/github` |
+| `SERVICE_ACCOUNT` | `github-deploy@laugga-45434.iam.gserviceaccount.com` |
+
+**It signs in the way `deploy.yml` does, in `laugga-45434`** (project number
+`1095622935123`), and stores no credential either. What has to exist there is
+the same three things, made once more, with one difference: the provider
+`github` accepts a token only from a run on a tag in the `laugga`
+organisation —
+`assertion.repository_owner_id == '116806833' && assertion.ref.startsWith('refs/tags/')`
+— where `laugga-development`'s accepts one only from `dev`. All three were
+read to exist on 2026-10-22 (LAU-19); this repository's binding is:
+
+```bash
+gcloud iam service-accounts add-iam-policy-binding github-deploy@laugga-45434.iam.gserviceaccount.com --project laugga-45434 --role roles/iam.workloadIdentityUser --member "principalSet://iam.googleapis.com/projects/1095622935123/locations/global/workloadIdentityPools/github/attribute.repository/laugga/laugga-web"
+```
+
+**That sign-in cannot be tried before a release.** Only a tag's run is
+accepted, and only an owner can push a tag, so the first final tag cut after a
+change to the workflow is the first place it shows. `firebase-app.sh` reads
+the Development project's side and not this one: a production grant that is
+missing is first reported by that run failing to sign in, and it is fixed on
+Google's side. A tag pushed while the two lines are still placeholders fails
+the run rather than passing with nothing deployed.
+
 ## Versioning
 
 `scripts/version/` is vendored from `share/version/` in `laugga/ops`,
@@ -256,6 +309,7 @@ The `Makefile` exports `VERSION_TASK_PREFIXES`, the task id prefixes
 Without it, a working branch here would have the whole branch name as its full
 version, and so as its preview channel.
 
-There are no tags. Per `CONVENTIONS.md`, a web repository adopts the tagging
-scheme when it first cuts a release, not before — so the version is `0.0.0`
-and the lane is what carries meaning. `make version` prints all of it.
+The version comes from the tags (`CONVENTIONS.md` → *Version, build number,
+full version*), and **a final tag is a production deploy** (*Deployment* →
+*Production*): it is cut with `/cut-release`, and never by an agent. `make
+version` prints the lane, version, build number and full version.
